@@ -1,13 +1,15 @@
-package app_proxy
+package main
 
 import (
-	"360.cn/armory/glog"
+	"fmt"
 	"net"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 const (
-	ROUTER_HOST = "127.0.0.1:27000"
+	ROUTER_HOST = "127.0.0.1:24801"
 	APP_HOST    = "127.0.0.1:24800"
 )
 
@@ -24,6 +26,7 @@ func connect(addr string) *net.TCPConn {
 	return Conn
 }
 func handleApp(appConn, routerConn *net.TCPConn) {
+	buf := make([]byte, 1024)
 	for {
 		appConn.Read(buf)
 		routerConn.Write(buf)
@@ -31,7 +34,7 @@ func handleApp(appConn, routerConn *net.TCPConn) {
 }
 
 func handleRouter(appConn, routerConn *net.TCPConn) {
-	buf := make([]byte)
+	buf := make([]byte, 1024)
 	for {
 		routerConn.Read(buf)
 		appConn.Write(buf)
@@ -39,7 +42,9 @@ func handleRouter(appConn, routerConn *net.TCPConn) {
 }
 func main() {
 	appConn := connect(APP_HOST)
+	fmt.Println("connect to server")
 	routerConn := connect(ROUTER_HOST)
+	fmt.Println("connect to router")
 
 	go handleApp(appConn, routerConn)
 	go handleRouter(appConn, routerConn)
