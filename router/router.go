@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"io/ioutil"
 	"net"
 	"time"
 
@@ -10,6 +12,10 @@ import (
 const (
 	CLIENT_ADDR = "0.0.0.0:24800"
 	SERVER_ADDR = "0.0.0.0:24801"
+)
+
+var (
+	stopChan = make(chan bool)
 )
 
 func createServer(addr string) *net.TCPListener {
@@ -27,19 +33,42 @@ func createServer(addr string) *net.TCPListener {
 
 }
 func handleClient(cliConn, serConn *net.TCPConn) {
-	buf := make([]byte, 1024)
+	fmt.Println("handleClient")
 	for {
-		cliConn.Read(buf)
-		serConn.Write(buf)
-
+		buf, err := ioutil.ReadAll(cliConn)
+		if err != nil || len(buf) == 0 {
+			glog.Error(err)
+			stopChan <- true
+			return
+		}
+		glog.Info("cli read: ", len(buf))
+		length, err := serConn.Write(buf)
+		if err != nil {
+			glog.Error(err)
+			stopChan <- true
+			return
+		}
+		glog.Info("server write: ", length)
 	}
 }
 
 func handleServer(cliConn, serConn *net.TCPConn) {
-	buf := make([]byte, 1024)
+	fmt.Println("handleServer")
 	for {
-		serConn.Read(buf)
-		cliConn.Write(buf)
+		buf, err := ioutil.ReadAll(serConn)
+		if err != nil || len(buf) == 0 {
+			glog.Error(err)
+			stopChan <- true
+			return
+		}
+		glog.Info("server read: ", len(buf))
+		length, err := cliConn.Write(buf)
+		if err != nil {
+			glog.Error(err)
+			stopChan <- true
+			return
+		}
+		glog.Info("cli write: ", length)
 	}
 }
 
@@ -47,21 +76,28 @@ func main() {
 	cServer := createServer(CLIENT_ADDR)
 	sServer := createServer(SERVER_ADDR)
 
-	serConn, err := sServer.AcceptTCP()
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	cliConn, err := cServer.AcceptTCP()
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	go handleClient(cliConn, serConn)
-	go handleServer(cliConn, serConn)
-
 	for {
-		time.Sleep(30 * time.Second)
-	}
+		serConn, err := sServer.AcceptTCP()
+		if err != nil {
+			glog.Fatal(err)
+		}
 
+		cliConn, err := cServer.AcceptTCP()
+		if err != nil {
+			glog.Fatal(err)
+		}
+		serConn.Write([]byte("hello"))
+
+		go handleClient(cliConn, serConn)
+		go handleServer(cliConn, serConn)
+
+		<-stopChan
+		cliConn.Close()
+		serConn.Close()
+
+		time.Sleep(3 * time.Second)
+		for len(stopChan) > 0 {
+			<-stopChan
+		}
+	}
 }
